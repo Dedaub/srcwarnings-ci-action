@@ -1,0 +1,82 @@
+name: 'dedaub srcwarnings action'
+description: 'A GitHub Action that retrieves warnings from a previously uploaded Dedaub projec'
+inputs:
+  project-id:
+    description: 'Project id'
+    required: true
+    default: -1
+  version-id:
+    description: 'Version id'
+    required: true
+    default: -1
+  timeout:
+    description: 'timeout'
+    required: false
+    default: 300
+  period:
+    description: 'Polling period'
+    default: 30
+  api-key:
+    description: 'API key'
+    required: true
+  api-url:
+    description: 'URL to connect to'
+    default: 'https://api.dedaub.com/api'
+outputs:
+  project_report:
+    description: 'Outline of warnings'
+    # need to specify the extra `value` field for `composite` actions
+    value: ${{ steps.get-project-report.outputs.project_report }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'  
+    - name: Install pipx
+      run:  pip install pipx
+      shell: bash
+    - name: Install srcwarnings
+      run: pipx install git+https://github.com/Dedaub/srcwarnings#egg=srcwarnings --force
+      shell: bash
+    - name: Check required parameters
+      if: ${{  inputs.project-id==-1 || inputs.version-id==-1 }}
+      run: |
+        echo "Missing required parameters project-id and/or version-id"
+        exit -1
+      shell: bash
+    - name: Set parameters
+      run: |
+        echo "INPUT_PROJECT_ID=--project-id ${{ inputs.project-id }}" >> $GITHUB_ENV
+        echo "INPUT_VERSION_ID=--version-id ${{ inputs.version-id }}" >> $GITHUB_ENV
+        echo "INPUT_TIMEOUT=--timeout ${{ inputs.timeout }}" >> $GITHUB_ENV
+        echo "INPUT_PERIOD=--period ${{ inputs.period }}" >> $GITHUB_ENV
+        echo "INPUT_API_URL=--api-url ${{ inputs.api-url }}" >> $GITHUB_ENV
+      shell: bash
+    - name: Check API key
+      if: ${{  inputs.api-key!='' }}
+      run: |
+          echo "INPUT_API_KEY=--api-key ${{ inputs.api-key }}" >> $GITHUB_ENV
+      shell: bash
+    - name: Fetch REPORT
+      id: get-project-report
+      run: |
+          set +e
+          output=$(srcwarnings ${{ env.INPUT_API_KEY }} \
+                ${{ env.INPUT_PROJECT_ID }} \
+                ${{ env.INPUT_VERSION_ID }} \
+                ${{ env.INPUT_TIMEOUT }} \
+                ${{ env.INPUT_API_URL }} \
+                ${{ env.INPUT_PERIOD }})
+          if [ $? -eq 0 ]; then
+                  result="\"$output\""
+                  echo ${result}
+                  echo 'project_report<<EOF' >> $GITHUB_OUTPUT
+                  echo "$result" >> $GITHUB_OUTPUT
+                  echo 'EOF' >> $GITHUB_OUTPUT
+          else
+            echo ${output}
+            exit -1
+          fi
+      shell: bash
